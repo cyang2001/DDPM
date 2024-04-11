@@ -154,6 +154,6 @@ def keep_training():
     # Continue training
     train(args, model)
 if __name__ == '__main__':
-    #launch()
+    launch()
     #eval()
-    keep_training()
+    #keep_training()
