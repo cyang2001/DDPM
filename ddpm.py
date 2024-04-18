@@ -31,9 +31,7 @@ class Diffusion:
     def noise_images(self, x, t):
         sqrt_alpha_hat = torch.sqrt(self.alpha_hat[t])[:, None, None, None]
         sqrt_one_minus_alpha_hat = torch.sqrt(1 - self.alpha_hat[t])[:, None, None, None]
-        # 广义高斯分布
-        shape = x.shape
-        Ɛ = generalized_gaussian_noise(alpha=1.5, beta=0.5, shape=shape).to(self.device)
+        Ɛ = torch.randn_like(x)
         return sqrt_alpha_hat * x + sqrt_one_minus_alpha_hat * Ɛ, Ɛ
 
     def sample_timesteps(self, n):
@@ -44,9 +42,7 @@ class Diffusion:
         logging.info(f"Sampling {n} new images....")
         model.eval()
         with torch.no_grad():
-            x = generalized_gaussian_noise(alpha=1.5, beta=0.5, shape=(n, 3, self.img_size, self.img_size)).to(self.device)
-            # 生成噪声
-            #x = torch.randn((n, 3, self.img_size, self.img_size)).to(self.device)
+            x = torch.randn((n, 3, self.img_size, self.img_size)).to(self.device)
             for i in tqdm(reversed(range(1, self.noise_steps)), position=0):
                 t = (torch.ones(n) * i).long().to(self.device)
                 predicted_noise = model(x, t)
@@ -85,15 +81,20 @@ def train(args, model=None):
             x_t, noise = diffusion.noise_images(images, t)
             predicted_noise = model(x_t, t)
             loss = mse(noise, predicted_noise)
-            loss /= args.gradient_accumulation_steps
-            loss.backward()
-
-        if (i + 1) % args.gradient_accumulation_steps == 0:
-            optimizer.step()
+            #loss /= args.gradient_accumulation_steps
             optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
-        del predicted_noise, loss
-        empty_cache()
+            pbar.set_postfix(MSE = loss.item())
+            logger.add_scalar("MSE", loss.item(), global_step=epoch * l + i)
+
+        #if (i + 1) % args.gradient_accumulation_steps == 0:
+        #    optimizer.step()
+        #    optimizer.zero_grad()
+
+        #del predicted_noise, loss
+        #empty_cache()
         sampled_images = diffusion.sample(model, n=images.shape[0])
         save_images(sampled_images, os.path.join("results", args.run_name, f"{epoch}.jpg"))
         torch.save(model.state_dict(), os.path.join("models", args.run_name, f"ckpt.pt"))
@@ -103,7 +104,7 @@ def launch():
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
     args.run_name = "DDPM_Uncondtional"
-    args.epochs = 75
+    args.epochs = 225
     args.batch_size = 8
     args.image_size = 64
     args.dataset_path = r"./data/cifar-10-batches-py"
